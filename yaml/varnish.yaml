@@ -1,0 +1,69 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: varnish-svc
+  namespace: varnish
+spec:
+  type: LoadBalancer
+  ports:
+  - name: "http"
+    port: 6081
+    targetPort: 80
+  selector:
+    app: varnish-proxy
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: varnish-proxy
+  labels:
+    app: varnish-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: varnish-proxy
+  template:
+    metadata:
+      labels:
+        app: varnish-proxy
+    spec:
+      initContainers:
+      - name: varnish-init
+        image: alpine
+        command: ["/bin/sh"]
+        args: [ "-c", "echo \"vcl 4.1; backend default none;\" > /etc/varnish/default.vcl"]
+        volumeMounts:
+        - mountPath: /etc/varnish
+          name: varnish-vcl
+      containers:
+      - name: varnish-sidecar
+        image: mariusm/vic:0.0.2
+        imagePullPolicy: Always
+        volumeMounts:
+        - mountPath: /etc/varnish
+          name: varnish-vcl
+      - name: varnish
+        image: varnish:7.2
+        args: ["-f", "/etc/varnish/default.vcl", "-n", "/etc/varnish/work", "-p", "default_keep=300"]
+        env:
+        - name: VARNISH_SIZE
+          value: 1G
+        resources:
+          requests:
+              memory: "1024Mi"
+              cpu: "250m"
+          limits:
+              memory: "2048Mi"
+              cpu: "500m"
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - mountPath: /etc/varnish/
+          name: varnish-vcl 
+ 
+      volumes:
+      - name: varnish-vcl
+        emptyDir: {}
+
